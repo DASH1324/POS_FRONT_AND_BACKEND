@@ -1,0 +1,58 @@
+body {
+    background: #eaf6f8;
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.mng-discounts {
+    display: flex;
+    flex-direction: row;
+    min-height: 100vh;
+}
+
+.discounts {
+    flex: 1;
+    padding-right: 60px;
+    padding-top: 20px;
+    box-sizing: border-box;
+    margin: 0 auto;    flex: 1;
+    padding-right: 60px;
+    padding-top: 20px;
+    box-sizing: border-box;
+    margin: 0 auto;
+}
+
+.discounts-content {
+    margin-top: 60px;
+}
+
+.discount-status-badge.active {
+  background-color: #e6f7f0;
+  color: #34a853;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.discount-action-icons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.discount-edit-btn,
+.discount-delete-btn {
+  border: none;
+  background: none;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.discount-edit-btn {
+  color: #2196f3;
+}
+
+.discount-delete-btn {
+  color: #f44336;
+}
