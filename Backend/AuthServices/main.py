@@ -19,8 +19,8 @@ app.include_router(employee_accounts.router, prefix='/employee-accounts', tags=[
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:4000",  # React frontend
-        "http://192.168.100.32:4000",  # React frontend (local network)
+        "http://localhost:4001",  # React frontend
+        "http://192.168.100.32:4001",  # React frontend (local network)
         "http://127.0.0.1:9001",  
         "http://127.0.0.1:9002",  
 

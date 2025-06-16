@@ -1,52 +1,48 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import './navbar.css';
 import logo from '../assets/logo.png';
 import { FaUtensils, FaReceipt, FaChartBar, FaBell, FaChevronDown } from 'react-icons/fa';
 
-const Navbar = () => {
+// KEY CHANGE 1: The component now accepts the 'user' prop from the Menu component.
+const Navbar = ({ user }) => { 
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
+  // This logic for the date is perfectly fine.
   const currentDate = new Date().toLocaleString("en-US", {
-  weekday: "long",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
-});
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+  });
 
-const toggleDropdown = () => {
-  setDropdownOpen(!isDropdownOpen);
-};
+  const toggleDropdown = () => {
+    setDropdownOpen(!isDropdownOpen);
+  };
 
-const handleLogout = () => {
-  localStorage.removeItem('access_token');
-  navigate('/');
-};
+  const handleLogout = () => {
+    // It's good practice to clear all user-related data on logout.
+    localStorage.removeItem('authToken'); 
+    localStorage.removeItem('username');
+    navigate('/');
+  };
 
-const getAuthToken = () => {
-    return localStorage.getItem("access_token");
-};
-
-const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", name: "Current User" });
-      useEffect(() => {
-          const token = getAuthToken();
-          if (token) {
-              try {
-                  const decodedToken = JSON.parse(atob(token.split('.')[1]));
-                  setLoggedInUserDisplay({
-                      name: decodedToken.sub || "Current User",
-                      role: decodedToken.role || "User"
-                  });
-              } catch (error) {
-                  console.error("Error decoding token for display:", error);
-              }
-          }
-      }, []);
+  // KEY CHANGE 2: The following state and effect are no longer needed.
+  // The username is now coming from the 'user' prop, which is more reliable.
+  /*
+    const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", name: "Current User" });
+    useEffect(() => {
+        const token = getAuthToken();
+        if (token) {
+            // ... this logic is redundant
+        }
+    }, []);
+  */
 
   return (
     <header className="navbar">
@@ -72,10 +68,17 @@ const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", n
         <div className="navbar-profile">
           <div className="nav-profile-left">
             <div className="nav-profile-pic"></div>
-            <div className="nav-profile-info">
-              <div className="nav-profile-role">Hi! I'm {loggedInUserDisplay.role}</div>
-              <div className="nav-profile-name">{loggedInUserDisplay.name}</div>
-            </div>
+            {/* KEY CHANGE 3: Use the 'user' prop for display */}
+            {user ? (
+              <div className="nav-profile-info">
+                <div className="nav-profile-role">Cashier</div>
+                <div className="nav-profile-name">{user}</div>
+              </div>
+            ) : (
+              <div className="nav-profile-info">
+                <div className="nav-profile-name">Loading...</div>
+              </div>
+            )}
           </div>
         
           <div className="nav-profile-right">

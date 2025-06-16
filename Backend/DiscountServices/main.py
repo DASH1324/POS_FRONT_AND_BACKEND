@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 
 
-from routers import auth, employee_accounts, discount
+from routers import discount
 
 
 app = FastAPI(
@@ -16,8 +16,7 @@ app = FastAPI(
 )
 
 
-app.include_router(auth.router, prefix='/auth', tags=['auth'])
-app.include_router(employee_accounts.router, prefix='/employee-accounts', tags=['employee-accounts'])
+
 
 
 app.include_router(discount.router_discounts)
@@ -26,10 +25,12 @@ app.include_router(discount.router_discounts)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:4000",     
-        "http://192.168.100.32:4000", 
+        "http://localhost:4001",     
+        "http://192.168.100.32:4001", 
         "http://localhost:9000",      
-        "http://localhost:9001",      
+        "http://localhost:9001",
+        "http://localhost:4000",     
+        "http://192.168.100.32:4000",       
   
     ],
     allow_credentials=True,

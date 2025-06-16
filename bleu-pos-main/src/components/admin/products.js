@@ -1,360 +1,138 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import "../admin/products.css"; // Ensure this CSS path is correct
-import Sidebar from "../sidebar"; // Ensure this path is correct
+import "../admin/products.css"; 
+import Sidebar from "../sidebar";
 import { FaChevronDown, FaBell } from "react-icons/fa";
 import DataTable from "react-data-table-component";
-import { DEFAULT_PROFILE_IMAGE } from "./employeeRecords"; // Ensure this path and export are correct
+import { jwtDecode } from 'jwt-decode'; // You'll need this for token decoding
+import { DEFAULT_PROFILE_IMAGE } from "./employeeRecords"; 
 
-const API_BASE_URL = "http://127.0.0.1:9001"; // POS Backend URL
+const API_BASE_URL = "http://127.0.0.1:8001";
+const getAuthToken = () => localStorage.getItem("authToken");
 
-// Moved outside component as it doesn't depend on state/props
-const currentDate = new Date().toLocaleString("en-US", {
-  weekday: "long",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
-});
-
-function Products() {
-  const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({
-    role: "User",
-    name: "Current User",
+function Products() { // Assuming this is your POS component
+  const currentDate = new Date().toLocaleString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+    hour: "numeric", minute: "numeric", second: "numeric",
   });
+  
+  const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", name: "Current User" });
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const navigate = useNavigate();
 
-  // State for dynamic product data from backend
-  const [activeTab, setActiveTab] = useState(null); // e.g., 'Drink', 'Food'
-  const [productTypes, setProductTypes] = useState([]); // e.g., ['Drink', 'Food', 'Merchandise']
-  const [productsByType, setProductsByType] = useState({}); // { 'Drink': [...], 'Food': [...] }
-  const [filterStates, setFilterStates] = useState({}); // Manages filter values for each tab
+  // FIX #1: Change state to match the working (IS) component's structure
+  const [activeTab, setActiveTab] = useState(null); // Will hold productTypeID
+  const [productTypes, setProductTypes] = useState([]); // For tabs
+  const [products, setProducts] = useState([]); // Flat list of all products
+  const [searchTerm, setSearchTerm] = useState(""); // For filtering
 
-  // State for API call status
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const toggleDropdown = () => {
-    setDropdownOpen(!isDropdownOpen);
-  };
+  const toggleDropdown = () => setDropdownOpen(!isDropdownOpen);
 
-  const getAuthToken = () => {
-    return localStorage.getItem("access_token");
-  };
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("username");
+    navigate("/");
+  }, [navigate]);
+  
+  // FIX #2: Add the `fetchProductTypes` function from your working component
+  const fetchProductTypes = useCallback(async (token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/ProductType/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch product types");
+      const data = await response.json();
+      setProductTypes(data);
+      if (data.length > 0) {
+        // Set the first type as active by default
+        setActiveTab(currentTab => currentTab === null ? data[0].productTypeID : currentTab);
+      }
+    } catch (err) {
+      console.error(err);
+      setError(error => error || err.message); // Set error only if not already set
+    }
+  }, []);
 
-  // Effect for setting user display info from token
+  // FIX #3: Simplify `fetchProducts` to just fetch and set the flat list
+  const fetchProducts = useCallback(async (token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/is_products/products/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to fetch products");
+      const data = await response.json();
+      setProducts(data);
+    } catch (err) {
+      console.error(err);
+      setError(error => error || err.message);
+    }
+  }, []);
+
+  // FIX #4: Fetch both types and products on component load
   useEffect(() => {
     const token = getAuthToken();
-    if (token) {
-      try {
-        const decodedToken = JSON.parse(atob(token.split(".")[1]));
-        setLoggedInUserDisplay({
-          name: decodedToken.sub || "Current User",
-          role: decodedToken.role || "User",
-        });
-      } catch (error) {
-        console.error("Error decoding token for display:", error);
-        // In case of a bad token, log the user out
-        localStorage.removeItem("access_token");
-        navigate("/");
-      }
-    } else {
-      // No token, redirect to login
-      navigate("/");
-    }
-  }, [navigate]);
+    const username = localStorage.getItem("username");
 
-  // Effect for fetching and processing product data from the backend
-  useEffect(() => {
-    const fetchProducts = async () => {
+    if (!token || !username) {
+      handleLogout();
+      return;
+    }
+    
+    try {
+      const decodedToken = jwtDecode(token);
+      setLoggedInUserDisplay({ name: username, role: decodedToken.role || "User" });
+
+      // Fetch all data
       setIsLoading(true);
-      setError(null);
-      const token = getAuthToken();
-
-      if (!token) {
-        setError("Authentication token not found. Please log in.");
+      Promise.all([
+        fetchProductTypes(token),
+        fetchProducts(token)
+      ]).catch(err => {
+        console.error("Error during data fetching:", err);
+        setError("Could not load all required data.");
+      }).finally(() => {
         setIsLoading(false);
-        navigate("/");
-        return;
-      }
+      });
 
-      try {
-        const response = await fetch(`${API_BASE_URL}/Products/products/`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        if (!response.ok) {
-          if (response.status === 401 || response.status === 403) {
-            setError("Unauthorized. Please log in again.");
-            localStorage.removeItem("access_token");
-            navigate("/");
-          } else {
-            const errorData = await response.json().catch(() => ({ detail: "Unknown server error" }));
-            throw new Error(`HTTP error ${response.status}: ${errorData.detail || "Failed to fetch products"}`);
-          }
-          return;
-        }
-
-        const allProductsFromBackend = await response.json();
-        const typesCollector = {};
-        const productsGroupedByType = {};
-        const initialFilterStates = {};
-
-        allProductsFromBackend.forEach((product) => {
-          const {
-              ProductID,
-              ProductName,
-              ProductTypeName, // This determines the tab
-              ProductCategory,
-              ProductDescription,
-              ProductPrice,
-              ProductImage,
-              ProductSizes // Assuming backend sends this as an array of strings
-          } = product;
-
-          // Collect unique product types for tabs
-          if (ProductTypeName) {
-            typesCollector[ProductTypeName] = true;
-          }
-
-          // Initialize data structures for each new product type
-          if (!productsGroupedByType[ProductTypeName]) {
-            productsGroupedByType[ProductTypeName] = [];
-            initialFilterStates[ProductTypeName] = {
-              search: "",
-              category: "",
-            };
-            // Add specific filters for 'Drink' type
-            if (ProductTypeName === "Drink") {
-              initialFilterStates[ProductTypeName].specificType = "";
-              initialFilterStates[ProductTypeName].specificSize = "";
-            }
-          }
-
-          // Construct full image URL from backend's relative path
-          let processedImageURL = DEFAULT_PROFILE_IMAGE; // Fallback
-          if (ProductImage && typeof ProductImage === 'string' && ProductImage.trim()) {
-              try {
-                  // `new URL` correctly joins the base URL and the relative path
-                  processedImageURL = new URL(ProductImage, API_BASE_URL).href;
-              } catch (e) {
-                  console.error(`Invalid image path for ${ProductName}:`, ProductImage);
-              }
-          }
-
-          // Format product data for the frontend
-          const frontendProduct = {
-            id: ProductID,
-            name: ProductName || "Unknown",
-            description: ProductDescription || "No description available.",
-            category: ProductCategory || "Uncategorized",
-            price: ProductPrice != null ? `₱${parseFloat(ProductPrice).toFixed(2)}` : "N/A",
-            image: processedImageURL,
-            // Handle specific fields for Drinks
-            types: ProductTypeName === "Drink" ? "Hot & Iced" : undefined, // Example static value, adjust if backend provides it
-            sizes: (ProductSizes && Array.isArray(ProductSizes) && ProductSizes.length > 0)
-                   ? ProductSizes.join(" & ")
-                   : "N/A",
-            _rawSizesList: ProductSizes || [], // Keep raw array for filtering
-          };
-
-          productsGroupedByType[ProductTypeName].push(frontendProduct);
-        });
-
-        const uniqueProductTypes = Object.keys(typesCollector).sort();
-        setProductTypes(uniqueProductTypes);
-        setProductsByType(productsGroupedByType);
-        setFilterStates(initialFilterStates);
-
-        // Set the first available product type as the default active tab
-        if (uniqueProductTypes.length > 0 && !activeTab) {
-          setActiveTab(uniqueProductTypes[0]);
-        }
-
-      } catch (err) {
-        console.error("Failed to fetch or process products:", err);
-        setError(err.message || "An unexpected error occurred.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (getAuthToken()) {
-        fetchProducts();
+    } catch (error) {
+      console.error("Invalid token:", error);
+      handleLogout();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]); // Fetch only on initial load or if user is redirected
+  }, [handleLogout, fetchProductTypes, fetchProducts]);
 
-  const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    navigate("/");
-  };
-
-  // Generic handler to update filter state for any tab
-  const handleFilterChange = (typeName, filterKey, value) => {
-    setFilterStates(prev => ({
-      ...prev,
-      [typeName]: {
-        ...(prev[typeName] || {}),
-        [filterKey]: value,
-      }
-    }));
-  };
-
-  // Memoized functions to get unique filter options for the active tab
-  const getUniqueValuesForFilter = (products, key) => {
-    if (!products || products.length === 0) return [];
-    return [...new Set(products.map(p => p[key]).filter(Boolean))].sort();
-  };
-  
-  const getUniqueIndividualSizes = (products) => {
-    if (!products || products.length === 0) return [];
-    const allSizes = new Set();
-    products.forEach(p => {
-      if (p._rawSizesList && Array.isArray(p._rawSizesList)) {
-        p._rawSizesList.forEach(size => allSizes.add(String(size).trim()));
-      }
-    });
-    return [...allSizes].sort();
-  };
-
-  const uniqueCategoriesForTab = useMemo(() => getUniqueValuesForFilter(productsByType[activeTab], 'category'), [activeTab, productsByType]);
-  const uniqueTypesForDrinkTab = useMemo(() => activeTab === 'Drink' ? getUniqueValuesForFilter(productsByType[activeTab], 'types') : [], [activeTab, productsByType]);
-  const uniqueSizesForDrinkTab = useMemo(() => activeTab === 'Drink' ? getUniqueIndividualSizes(productsByType[activeTab]) : [], [activeTab, productsByType]);
-
-  // Memoized calculation for filtering products based on active filters
+  // FIX #5: Filter the flat `products` array for display
   const filteredProductsForActiveTab = useMemo(() => {
-    if (!activeTab || !productsByType[activeTab] || !filterStates[activeTab]) {
-      return [];
-    }
-    const currentProducts = productsByType[activeTab];
-    const currentFilters = filterStates[activeTab];
+    if (!activeTab || products.length === 0) return [];
+    
+    return products.filter(product => 
+      product.ProductTypeID === activeTab &&
+      (product.ProductName || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  }, [activeTab, products, searchTerm]);
 
-    return currentProducts.filter(item => {
-      const searchLower = (currentFilters.search || "").toLowerCase();
-      const searchMatch = item.name.toLowerCase().includes(searchLower);
-      const categoryMatch = !currentFilters.category || item.category === currentFilters.category;
-
-      let typeMatch = true;
-      let sizeMatch = true;
-
-      // Apply drink-specific filters only if the active tab is 'Drink'
-      if (activeTab === "Drink" && currentFilters) {
-        typeMatch = !currentFilters.specificType || item.types === currentFilters.specificType;
-        if (currentFilters.specificSize) {
-          // Check if the selected size is in the product's raw size list
-          sizeMatch = item._rawSizesList.map(s => String(s).trim()).includes(String(currentFilters.specificSize).trim());
-        }
-      }
-      return searchMatch && categoryMatch && typeMatch && sizeMatch;
-    });
-  }, [activeTab, productsByType, filterStates]);
-
-  // Function to generate columns dynamically for the DataTable
-  const getColumnsForProductType = (typeName) => {
-    const baseColumns = [
-      {
-        name: "NO.",
-        // The cell function receives the row data, and the index of the row
-        cell: (row, index) => index + 1,
-        width: "60px", // Fixed width for the number column
-        center: true,
-      },
-      {
-        name: "PRODUCT IMAGE",
-        cell: (row) => (
-            <img
-              src={row.image}
-              alt={row.name}
-              className="product-photo"
-              onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PROFILE_IMAGE; }}
-            />
-        ),
-        width: "120px",
-        center: true,
-      },
-      {
-        name: "PRODUCT NAME",
-        selector: (row) => row.name,
-        cell: (row) => <div className="product-name">{row.name}</div>,
-        sortable: true,
-        width: "18%",
-      },
-      { name: "DESCRIPTION", selector: (row) => row.description, wrap: true, width: "25%" },
-      { name: "CATEGORY", selector: (row) => row.category, center: true, sortable: true, width: "12%" },
-    ];
-
-    if (typeName === "Drink") {
-      baseColumns.push(
-        { name: "TYPES", selector: (row) => row.types, center: true, width: "10%" },
-        { name: "SIZES", selector: (row) => row.sizes, center: true, width: "12%" }
-      );
-    } else {
-        // Generic SIZES column for non-drink items if they have sizes
-        baseColumns.push({ name: "SIZES", selector: (row) => row.sizes, center: true, width: "15%" });
-    }
-
-    baseColumns.push({ name: "PRICE", selector: (row) => row.price, center: true, sortable: true, width: "8%" });
-
-    return baseColumns;
-  };
+  // Define columns for the DataTable
+  const columns = [
+    { name: "IMAGE", cell: row => <img src={row.ProductImage || DEFAULT_PROFILE_IMAGE} alt={row.ProductName} className="product-photo" onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PROFILE_IMAGE; }} />, width: "100px", center: true },
+    { name: "NAME", selector: row => row.ProductName, sortable: true, width: "25%" },
+    { name: "CATEGORY", selector: row => row.ProductCategory, sortable: true, width: "20%" },
+    { name: "SIZES", selector: row => row.ProductSizes?.join(', ') || 'N/A', width: "20%" },
+    { name: "PRICE", selector: row => `₱${parseFloat(row.ProductPrice).toFixed(2)}`, sortable: true, center: true, width: "15%" },
+    // Add an action column if needed for POS, e.g., 'Add to Cart'
+  ];
 
   const dataTableStyles = {
-    headCells: {
-      style: {
-        backgroundColor: "#4B929D",
-        color: "#FFFFFF",
-        fontWeight: "600",
-        fontSize: "14px",
-        padding: "12px",
-        textTransform: "uppercase",
-        textAlign: "center",
-      },
-    },
-    rows: {
-      style: {
-        minHeight: "70px",
-        padding: "8px",
-      },
-       highlightOnHoverStyle: {
-        backgroundColor: "#f0f8ff",
-      },
-    },
-     cells: {
-      style: {
-        fontSize: '14px',
-        verticalAlign: 'middle',
-      },
-    },
+    headCells: { style: { backgroundColor: "#4B929D", color: "#FFFFFF", fontWeight: "600", fontSize: "14px" } },
+    rows: { style: { minHeight: "70px" }, highlightOnHoverStyle: { backgroundColor: "#f0f8ff" } },
   };
 
   if (isLoading) {
-    return (
-      <div className="productList">
-        <Sidebar />
-        <div className="products">
-          <header className="header"><div className="header-left"><h2 className="page-title">Products</h2></div></header>
-          <div className="loading-container">Loading products...</div>
-        </div>
-      </div>
-    );
+    return <div>Loading...</div>; // Simple loading state
   }
-
   if (error) {
-    return (
-      <div className="productList">
-        <Sidebar />
-        <div className="products">
-           <header className="header"><div className="header-left"><h2 className="page-title">Products</h2></div></header>
-          <div className="error-container">Error: {error}</div>
-        </div>
-      </div>
-    );
+    return <div>Error: {error}</div>; // Simple error state
   }
 
   return (
@@ -362,9 +140,8 @@ function Products() {
       <Sidebar />
       <div className="products">
         <header className="header">
-          <div className="header-left">
-            <h2 className="page-title">Products</h2>
-          </div>
+          {/* Your header JSX remains the same */}
+          <div className="header-left"><h2 className="page-title">Point of Sale</h2></div>
           <div className="header-right">
             <div className="header-date">{currentDate}</div>
             <div className="header-profile">
@@ -389,76 +166,37 @@ function Products() {
         </header>
 
         <div className="products-content">
+          {/* FIX #6: Render tabs and filters based on the new state structure */}
           <div className="tabs">
-            {productTypes.map((typeName) => (
-              <button
-                key={typeName}
-                className={`tab ${activeTab === typeName ? "active-tab" : ""}`}
-                onClick={() => setActiveTab(typeName)}
+            {productTypes.map((type) => (
+              <button 
+                key={type.productTypeID} 
+                className={`tab ${activeTab === type.productTypeID ? "active-tab" : ""}`} 
+                onClick={() => setActiveTab(type.productTypeID)}
               >
-                {typeName}
+                {type.productTypeName}
               </button>
             ))}
-            {productTypes.length === 0 && !isLoading && <div className="no-data-message">No product types found.</div>}
           </div>
-
           <div className="tab-content">
-            {activeTab && productsByType[activeTab] && filterStates[activeTab] && (
-              <div className="dynamic-product-content">
-                <div className="filter-bar">
-                  <input
-                    type="text"
-                    placeholder={`Search ${activeTab}...`}
-                    value={filterStates[activeTab]?.search || ""}
-                    onChange={(e) => handleFilterChange(activeTab, "search", e.target.value)}
-                  />
-                  <select
-                    value={filterStates[activeTab]?.category || ""}
-                    onChange={(e) => handleFilterChange(activeTab, "category", e.target.value)}
-                  >
-                    <option value="">All Categories</option>
-                    {uniqueCategoriesForTab.map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-
-                  {/* Conditional filters for Drinks */}
-                  {activeTab === "Drink" && (
-                    <>
-                      <select
-                        value={filterStates[activeTab]?.specificType || ""}
-                        onChange={(e) => handleFilterChange(activeTab, "specificType", e.target.value)}
-                      >
-                        <option value="">All Types</option>
-                         {uniqueTypesForDrinkTab.map((type) => (
-                            <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={filterStates[activeTab]?.specificSize || ""}
-                        onChange={(e) => handleFilterChange(activeTab, "specificSize", e.target.value)}
-                      >
-                        <option value="">All Sizes</option>
-                        {uniqueSizesForDrinkTab.map((size) => (
-                            <option key={size} value={size}>{size}</option>
-                        ))}
-                      </select>
-                    </>
-                  )}
-                </div>
-                <DataTable
-                  columns={getColumnsForProductType(activeTab)}
-                  data={filteredProductsForActiveTab}
-                  striped
-                  highlightOnHover
-                  responsive
-                  pagination
-                  customStyles={dataTableStyles}
-                  noDataComponent={<div className="no-data-message">No products found for '{activeTab}' with the current filters.</div>}
+            <div className="filter-bar">
+                <input 
+                    type="text" 
+                    placeholder="Search in current category..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                 />
-              </div>
-            )}
-             {!activeTab && productTypes.length > 0 && <div className="no-data-message">Please select a product type.</div>}
+            </div>
+            <DataTable 
+                columns={columns} 
+                data={filteredProductsForActiveTab} 
+                striped 
+                highlightOnHover 
+                responsive 
+                pagination 
+                customStyles={dataTableStyles} 
+                noDataComponent={<div style={{padding: "24px"}}>No products found in this category.</div>}
+            />
           </div>
         </div>
       </div>

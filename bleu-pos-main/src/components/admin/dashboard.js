@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
-import "../admin/dashboard.css";
-import Sidebar from "../sidebar";
+import "./dashboard.css"; 
+import Sidebar from "../sidebar"; 
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   AreaChart, Area
@@ -36,20 +36,7 @@ const salesData = [
   { name: 'Sun', sales: 63 },
 ];
 
-const currentDate = new Date().toLocaleString("en-US", {
-  weekday: "long",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  hour: "numeric",
-  minute: "numeric",
-  second: "numeric",
-});
-
-const userRole = "Admin";
-const userName = "Lim Alcovendas";
-
-const data = [
+const summaryCardData = [
   {
     title: "Today's Sales",
     current: 28123,
@@ -94,16 +81,50 @@ const Dashboard = () => {
   const [revenueFilter, setRevenueFilter] = useState("Monthly");
   const [salesFilter, setSalesFilter] = useState("Monthly");
   const [isDropdownOpen, setDropdownOpen] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  const [userName, setUserName] = useState("Admin User");
+  const [userRole, setUserRole] = useState("Admin");
 
   const toggleDropdown = () => {
     setDropdownOpen(!isDropdownOpen);
   };
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token"); // Correct key
-    console.log("Access Token:", token);
+    const params = new URLSearchParams(window.location.search);
+    const usernameFromUrl = params.get('username');
+    const tokenFromUrl = params.get('authorization');
+
+    if (usernameFromUrl && tokenFromUrl) {
+      console.log("✅ Received Username from URL:", usernameFromUrl);
+      console.log("✅ Received Authorization Token from URL. Storing both.");
+
+      
+      // Save BOTH the username and the token to localStorage.
+      localStorage.setItem('username', usernameFromUrl);
+      localStorage.setItem('authToken', tokenFromUrl);
+   
+      setUserName(usernameFromUrl);
+      
+      if (window.history.replaceState) {
+        const cleanUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}`;
+        window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+      }
+    } else {
+      console.log("No URL params. Checking localStorage for existing session.");
+      const storedUsername = localStorage.getItem('username');
+      if (storedUsername) {
+        console.log("✅ Found username in localStorage:", storedUsername);
+        setUserName(storedUsername);
+      }
+    }
+  }, []); 
+
+  useEffect(() => {
+    const timerId = setInterval(() => setCurrentDate(new Date()), 1000);
+    return () => clearInterval(timerId); 
   }, []);
-  
+
   return (
     <div className="dashboard">
       <Sidebar />
@@ -114,7 +135,17 @@ const Dashboard = () => {
           </div>
 
           <div className="header-right">
-            <div className="header-date">{currentDate}</div>
+            <div className="header-date">
+              {currentDate.toLocaleString("en-US", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "numeric",
+                minute: "numeric",
+                second: "numeric",
+              })}
+            </div>
             <div className="header-profile">
               <div className="profile-pic" />
               <div className="profile-info">
@@ -141,7 +172,7 @@ const Dashboard = () => {
 
         <div className="dashboard-contents">
           <div className="dashboard-cards">
-            {data.map((card, index) => {
+            {summaryCardData.map((card, index) => {
               const { current, previous } = card;
               const diff = current - previous;
               const percent = previous !== 0 ? (diff / previous) * 100 : 0;
@@ -157,7 +188,7 @@ const Dashboard = () => {
                       {hasChange && (
                         <div className={`card-percent ${isImproved ? 'green' : 'red'}`}>
                           <FontAwesomeIcon icon={isImproved ? faArrowTrendUp : faArrowTrendDown} />
-                          &nbsp;&nbsp;&nbsp;{Math.abs(percent).toFixed(1)}%
+                             {Math.abs(percent).toFixed(1)}%
                         </div>
                       )}
                     </div>
@@ -192,8 +223,8 @@ const Dashboard = () => {
                   <YAxis />
                   <Tooltip />
                   <Legend />
-                  <Line type="monotone" dataKey="income" stroke="#00b4d8" />
-                  <Line type="monotone" dataKey="expense" stroke="#ff4d6d" />
+                  <Line type="monotone" dataKey="income" stroke="#00b4d8" strokeWidth={2}/>
+                  <Line type="monotone" dataKey="expense" stroke="#ff4d6d" strokeWidth={2}/>
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -228,6 +259,7 @@ const Dashboard = () => {
                     type="monotone"
                     dataKey="sales"
                     stroke="#00b4d8"
+                    strokeWidth={2}
                     fillOpacity={1}
                     fill="url(#colorSales)"
                   />

@@ -7,7 +7,6 @@ import DataTable from "react-data-table-component";
 import { DEFAULT_PROFILE_IMAGE } from "./employeeRecords"; 
 
 const API_BASE_URL_DISCOUNTS = "http://localhost:9002";
-
 const API_BASE_URL_PRODUCTS = "http://localhost:9001"; 
 
 const currentDate = new Date().toLocaleString("en-US", {
@@ -21,7 +20,7 @@ const currentDate = new Date().toLocaleString("en-US", {
 });
 
 function Discounts() {
-  const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", name: "Current User", userId: null });
+  const [loggedInUserDisplay, setLoggedInUserDisplay] = useState({ role: "User", name: "Current User" });
   const [isDropdownOpen, setDropdownOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [applicationFilter, setApplicationFilter] = useState("");
@@ -29,17 +28,17 @@ function Discounts() {
   const today = new Date().toISOString().split('T')[0];
 
   const [discounts, setDiscounts] = useState([]);
-  const [isLoadingDiscounts, setIsLoadingDiscounts] = useState(false); // Specific loading for discounts
-  const [errorDiscounts, setErrorDiscounts] = useState(null);         // Specific error for discounts
+  const [isLoadingDiscounts, setIsLoadingDiscounts] = useState(true); 
+  const [errorDiscounts, setErrorDiscounts] = useState(null);        
 
   const [availableProducts, setAvailableProducts] = useState([]);
-  const [isLoadingProducts, setIsLoadingProducts] = useState(false); // Specific loading for products
-  const [errorProducts, setErrorProducts] = useState(null);           // Specific error for products
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [errorProducts, setErrorProducts] = useState(null);           
 
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [editingDiscountId, setEditingDiscountId] = useState(null);
   const [viewingDiscount, setViewingDiscount] = useState(null);
-  const [isSavingDiscount, setIsSavingDiscount] = useState(false); // Specific loading for save/delete
+  const [isSavingDiscount, setIsSavingDiscount] = useState(false); 
 
   const [discountForm, setDiscountForm] = useState({
     discountName: '',
@@ -53,38 +52,48 @@ function Discounts() {
 
   const navigate = useNavigate();
 
-  const getAuthToken = () => localStorage.getItem("access_token");
+  
+  const getAuthToken = () => localStorage.getItem("authToken");
   const getUsernameFromStorage = () => localStorage.getItem("username");
+
+  const handleLogout = () => {
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("username");
+    navigate("/");
+  };
 
   useEffect(() => {
     const token = getAuthToken();
-    if (token) {
-      try {
-        const decodedToken = JSON.parse(atob(token.split(".")[1]));
-        const storedUsername = getUsernameFromStorage();
-        setLoggedInUserDisplay({
-          name: storedUsername || decodedToken.sub || "Current User",
-          role: decodedToken.role || "User",
-          userId: decodedToken.user_id || null,
-        });
-      } catch (error) {
-        console.error("Error decoding token for display:", error);
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("username");
-        navigate("/");
-      }
-    } else {
-      navigate("/");
+    const username = getUsernameFromStorage();
+
+    if (!token || !username) {
+      console.log("Discounts Page: Auth token or username not found. Redirecting to login.");
+      handleLogout(); 
+      return;
     }
-  }, [navigate]);
+    
+    try {
+      const decodedToken = JSON.parse(atob(token.split(".")[1]));
+      setLoggedInUserDisplay({
+        name: username,
+        role: decodedToken.role || "User",
+      });
+      
+      fetchDiscounts();
+      fetchAvailableProducts();
+
+    } catch (error) {
+      console.error("Discounts Page: Invalid token found. Logging out.", error);
+      handleLogout(); 
+    }
+  }, [navigate]); 
+
 
   const fetchDiscounts = useCallback(async () => {
     setIsLoadingDiscounts(true);
     setErrorDiscounts(null);
     const token = getAuthToken();
     if (!token) {
-      setErrorDiscounts("Authentication token not found.");
-      setIsLoadingDiscounts(false);
       navigate("/");
       return;
     }
@@ -127,17 +136,15 @@ function Discounts() {
       return;
     }
     try {
-      // --- CORRECTED ENDPOINT ---
       const response = await fetch(`${API_BASE_URL_PRODUCTS}/Products/products/`, {
         headers: { "Authorization": `Bearer ${token}` }, 
       });
-      // --------------------------
       if (!response.ok) {
         let errorDetail = `HTTP error! status: ${response.status}`;
         try {
             const errData = await response.json();
             errorDetail = errData.detail || errorDetail;
-        } catch (e) { /* Ignore if response is not JSON */ }
+        } catch (e) { /* Ignore */ }
         throw new Error(errorDetail);
       }
       const data = await response.json();
@@ -149,18 +156,13 @@ function Discounts() {
       setIsLoadingProducts(false);
     }
   }, []);
-
-  useEffect(() => {
-    fetchDiscounts();
-    fetchAvailableProducts();
-  }, [fetchDiscounts, fetchAvailableProducts]);
-
+  
+  
   useEffect(() => {
     const todayISO = new Date().toISOString().split("T")[0];
     setDiscounts(prev =>
       prev.map(d => {
         if (d.status.toLowerCase() === "active" && d.validTo < todayISO) {
-
         }
         return d;
       })
@@ -169,12 +171,6 @@ function Discounts() {
 
 
   const toggleDropdown = () => setDropdownOpen(!isDropdownOpen);
-
-  const handleLogout = () => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("username");
-    navigate("/");
-  };
 
   const handleDiscountModalOpen = (discountToEdit = null) => {
     if (discountToEdit) {
@@ -234,7 +230,7 @@ function Discounts() {
 
     const actingUsername = getUsernameFromStorage();
     if (!actingUsername) {
-        alert("Username not found in local storage. Cannot save discount. Please log in again.");
+        alert("Username not found. Cannot save discount. Please log in again.");
         return;
     }
 
@@ -246,7 +242,8 @@ function Discounts() {
       ValidFrom: new Date(discountForm.validFrom).toISOString(),
       ValidTo: new Date(discountForm.validTo).toISOString(),
       Status: discountForm.status,
-      Username: actingUsername,
+      // FIXED: Changed "Username" to "username" (lowercase u) to match the backend model.
+      username: actingUsername,
     };
 
     const token = getAuthToken();
@@ -259,65 +256,44 @@ function Discounts() {
     try {
       const response = await fetch(url, {
         method: method,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(payload),
       });
 
       const responseData = await response.json();
-
-      if (!response.ok) {
-        throw new Error(responseData.detail || `Failed to save discount. Status: ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(responseData.detail || `Failed to save discount.`);
+      
       fetchDiscounts();
       handleDiscountModalClose();
       alert(`Discount "${responseData.DiscountName}" ${editingDiscountId ? 'updated' : 'created'} successfully!`);
 
     } catch (err) {
-      console.error("Error saving discount:", err);
       alert(`Error saving discount: ${err.message}`);
     } finally {
         setIsSavingDiscount(false);
     }
   };
 
-  const handleEditClick = (discount) => {
-    handleDiscountModalOpen(discount);
-  };
+  const handleEditClick = (discount) => handleDiscountModalOpen(discount);
 
-  const handleViewClick = (discount) => {
-    setViewingDiscount(discount);
-  };
-
+  const handleViewClick = (discount) => setViewingDiscount(discount);
+  
   const handleDeleteClick = async (discount) => {
-    if (!window.confirm(`Are you sure you want to delete the discount "${discount.name}"? This action is permanent.`)) {
-      return;
-    }
-    const token = getAuthToken();
-    setIsSavingDiscount(true); // Re-use for delete action or create a new one e.g. setIsDeleting
-    try {
-      const actingUsername = getUsernameFromStorage();
-      const deletePayload = actingUsername ? { Username: actingUsername } : {};
+    if (!window.confirm(`Are you sure you want to delete the discount "${discount.name}"?`)) return;
 
+    const token = getAuthToken();
+    setIsSavingDiscount(true);
+    try {
       const response = await fetch(`${API_BASE_URL_DISCOUNTS}/discounts/${discount.id}`, {
         method: "DELETE",
-        headers: {
-            "Authorization": `Bearer ${token}`,
-            ...(Object.keys(deletePayload).length > 0 && actingUsername && { "Content-Type": "application/json" })
-        },
-        ...(Object.keys(deletePayload).length > 0 && actingUsername && { body: JSON.stringify(deletePayload) })
+        headers: { "Authorization": `Bearer ${token}` },
       });
       const responseData = await response.json();
-      if (!response.ok) {
-        throw new Error(responseData.detail || `Failed to delete discount. Status: ${response.status}`);
-      }
-      alert(responseData.message || `Discount "${discount.name}" deleted successfully.`);
+      if (!response.ok) throw new Error(responseData.detail || `Failed to delete discount.`);
+      
+      alert(responseData.message || `Discount deleted successfully.`);
       fetchDiscounts();
     } catch (err) {
-      console.error("Error deleting discount:", err);
       alert(`Error deleting discount: ${err.message}`);
     } finally {
         setIsSavingDiscount(false);
@@ -327,27 +303,17 @@ function Discounts() {
   const discountListColumns = [
     { name: "NAME", selector: row => row.name, sortable: true, width: "15%" },
     { name: "DISCOUNT", selector: row => row.discount, sortable: true, width: "10%" },
-    { name: "MIN. SPEND", selector: row => `₱${row.minSpend}`, sortable: true, width: "10%" },
+    { name: "MIN. SPEND", selector: row => `₱${row.minSpend.toLocaleString()}`, sortable: true, width: "10%" },
     { name: "PRODUCT NAME", selector: row => row.application, width: "20%" },
     { name: "VALID PERIOD", selector: row => `${row.validFrom} - ${row.validTo}`, width: "15%" },
-    {
-      name: "STATUS",
-      cell: row => <span className={`status-badge ${row.status.toLowerCase()}`}>{row.status}</span>,
-      sortable: true,
-      center: true,
-      width: "10%",
-    },
-    {
-      name: "ACTION",
-      cell: (row) => (
+    { name: "STATUS", cell: row => <span className={`status-badge ${row.status.toLowerCase()}`}>{row.status}</span>, sortable: true, center: true, width: "10%" },
+    { name: "ACTION", cell: (row) => (
         <div className="action-buttons">
           <button className="view-button" title="View" onClick={() => handleViewClick(row)}><FaFolderOpen /></button>
           <button className="edit-button" title="Edit" onClick={() => handleEditClick(row)}><FaEdit /></button>
           <button className="delete-button" title="Delete" onClick={() => handleDeleteClick(row)}><FaArchive /></button>
         </div>
-      ),
-      ignoreRowClick: true, allowOverflow: true, button: true, center: true, width: "20%",
-    },
+      ), ignoreRowClick: true, allowOverflow: true, button: true, center: true, width: "20%" },
   ];
 
   const filteredDiscounts = discounts.filter(d =>
@@ -358,9 +324,7 @@ function Discounts() {
 
   const productApplications = [...new Set(discounts.map(d => d.application.startsWith("Product ID:") ? null : d.application))].filter(Boolean);
 
-  const showGlobalLoading = isLoadingDiscounts && !showDiscountModal; // Only show global loading for initial discount fetch
-
-  if (showGlobalLoading) return <div className="mng-discounts"><Sidebar /><div className="discounts"><p>Loading discounts...</p></div></div>;
+  if (isLoadingDiscounts) return <div className="mng-discounts"><Sidebar /><div className="discounts"><p>Loading discounts...</p></div></div>;
   if (errorDiscounts) return <div className="mng-discounts"><Sidebar /><div className="discounts"><p>Error fetching discounts: {errorDiscounts}</p><button onClick={fetchDiscounts}>Retry</button></div></div>;
 
   return (
@@ -545,7 +509,7 @@ function Discounts() {
                       </div>
                       <div>
                         <label>Minimum Spend:</label>
-                        <p>₱{viewingDiscount.minSpend}</p>
+                        <p>₱{viewingDiscount.minSpend.toLocaleString()}</p>
                       </div>
                     </div>
 

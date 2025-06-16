@@ -9,7 +9,6 @@ from typing import Optional
 
 router = APIRouter()
 
-# Configuration for image uploads
 UPLOAD_DIRECTORY = "uploads"
 os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
@@ -146,7 +145,6 @@ async def update_user(
         conn = await get_db_connection()
         cursor = await conn.cursor()
 
-        # Fetch current user details including role and username
         await cursor.execute("SELECT UploadImage, UserRole, Username, UserPassword FROM Users WHERE UserID = ? AND isDisabled = 0", (user_id,))
         current_user_db_info = await cursor.fetchone()
         if not current_user_db_info:
@@ -155,16 +153,12 @@ async def update_user(
         current_image_filename = current_user_db_info[0]
         current_user_role_db = current_user_db_info[1]
         current_username_db = current_user_db_info[2]
-        # current_password_hash_db = current_user_db_info[3] # Not directly used for comparison, but for context
 
         updates = []
         values = []
 
         if fullName:
-            # Optional: Check for FullName collision if it's being changed
-            # await cursor.execute("SELECT 1 FROM Users WHERE FullName = ? AND UserID != ? AND isDisabled = 0", (fullName, user_id))
-            # if await cursor.fetchone():
-            #     raise HTTPException(status_code=400, detail="Full name is already used by another user")
+           
             updates.append('FullName = ?')
             values.append(fullName)
 
@@ -176,16 +170,15 @@ async def update_user(
             values.append(emailAddress)
 
         # --- Role and Username Change Logic ---
-        effective_role = current_user_role_db # Start with current role
+        effective_role = current_user_role_db
         if userRole and userRole != current_user_role_db: # If role is being changed
             if userRole not in ['admin', 'manager', 'cashier']:
                 raise HTTPException(status_code=400, detail="Invalid new role specified.")
             updates.append('UserRole = ?')
             values.append(userRole)
-            effective_role = userRole # New role becomes the effective role for subsequent checks
+            effective_role = userRole 
 
             if userRole == 'cashier':
-                # Username for cashier must be 'cashier'
                 if current_username_db != 'cashier': # Only update if not already 'cashier' (though it should be if role was cashier)
                     updates.append('Username = ?')
                     values.append('cashier')
