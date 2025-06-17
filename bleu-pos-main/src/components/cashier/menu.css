@@ -1,14 +1,3 @@
-/*
-* ===================================================================
-* FINAL MERGED CSS
-* This file combines the best of both provided CSS files.
-* - It uses the superior layout, structure, and responsive grid from the "New CSS".
-* - It integrates the essential feature-specific styles (Cart Panel, Add-ons Modal,
-*   Unavailable Overlay) from your "Old CSS".
-* ===================================================================
-*/
-
-/* === Global and Base Styles (from New CSS) === */
 * {
   font-family: 'Poppins', sans-serif;
   box-sizing: border-box;
@@ -17,11 +6,10 @@
 body, html {
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Prevents whole page scroll, better for app-like layouts */
+  overflow: hidden; /* Prevent body scroll */
   height: 100vh;
 }
 
-/* === Main Page Layout (from New CSS) === */
 .menu-page {
   height: 100vh;
   display: flex;
@@ -31,64 +19,74 @@ body, html {
 
 .menu-page-content {
   display: flex;
-  height: calc(100vh - 60px); /* Adjust based on your actual Navbar height */
+  height: calc(100vh - 60px); /* Adjust based on navbar height */
   width: 100%;
+  margin-left: 25px;
+  transition: margin-left 0.3s ease;
   overflow: hidden;
-  transition: margin-right 0.3s ease-in-out; /* Changed from margin-left for right-side cart */
 }
 
-/* When cart is open, the main content gets a margin */
-.menu-page-content.cart-open {
-  margin-right: 380px; /* Width of the cart panel */
+.menu-container {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* === Sidebar / Category List (from New CSS, adapted) === */
 .menu-category-sidebar {
-  width: 220px; /* Slightly wider for better text fit */
-  padding: 20px 10px;
+  width: 180px;
+  padding: 10px;
+  position: sticky;
   flex-shrink: 0;
-  height: calc(100vh - 60px); /* Full height minus navbar */
+  top: 0;
+  align-self: flex-start;
+  margin-left: 20px;
+  margin-top: 12px;
+  height: fit-content;
+  max-height: calc(100vh - 80px);
   overflow-y: auto;
+  
+  /* Hide scrollbar for sidebar too */
   scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
 }
 
 .menu-category-sidebar::-webkit-scrollbar {
-  display: none; /* Webkit */
+  display: none; /* Webkit browsers */
 }
 
 .menu-category-group {
-  margin-bottom: 24px;
+  margin-bottom: 25px;
 }
 
-.menu-all-products-btn,
 .menu-group-title {
   color: #4197a2;
   font-weight: 700;
-  font-size: 14px;
-  margin-bottom: 12px;
+  font-size: 18px;
+  margin-bottom: 10px;
   text-transform: uppercase;
+  font-family: 'Poppins', sans-serif;
   cursor: pointer;
   transition: color 0.3s;
 }
 
-.menu-all-products-btn:hover,
 .menu-group-title:hover {
   color: #357b88;
 }
 
-.menu-all-products-btn.active,
 .menu-group-title.active {
   color: #357b88;
   font-weight: 800;
 }
 
 .menu-category-item {
-  font-size: 14px;
-  margin-bottom: 8px;
-  padding-left: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
   cursor: pointer;
-  transition: color 0.3s, font-weight 0.3s;
+  font-family: 'Poppins', sans-serif;
+  transition: color 0.3s;
 }
 
 .menu-category-item:hover {
@@ -100,17 +98,9 @@ body, html {
   font-weight: 600;
 }
 
-/* === Main Content & Product Display (from New CSS) === */
-.menu-main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden; /* This is the main container for the list */
-}
-
 .menu-product-list {
   flex: 1;
+  font-family: 'Poppins', sans-serif;
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -119,48 +109,76 @@ body, html {
 }
 
 .menu-product-list-header {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
   margin-bottom: 20px;
-  flex-shrink: 0;
+  flex-shrink: 0; /* Don't shrink the header */
 }
 
 .menu-selected-category-title {
-  font-size: 1.8rem;
+  font-size: 1.5rem;
   font-weight: 700;
   margin: 0;
+  margin-left: 0;
   color: #4197a2;
+  flex-shrink: 0;
 }
 
-/* This container is the key to the independent scrolling grid */
+/* Make the product grid container scrollable */
 .menu-product-grid-container {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 15px; /* Space for scrollbar */
+  padding-right: 10px; /* Space for scrollbar */
+  
+  /* Hide scrollbar for Webkit browsers (Chrome, Safari, Edge) */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.menu-product-grid-container::-webkit-scrollbar {
+  display: none; /* Webkit browsers */
 }
 
 .menu-product-grid {
   display: grid;
   gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); /* Fully responsive grid */
-  padding-bottom: 20px;
+  /* Default: 4 columns when cart is closed */
+  grid-template-columns: repeat(4, 1fr);
+  transition: grid-template-columns 0.3s ease;
+  padding-bottom: 20px; /* Add some bottom padding */
 }
 
-/* Product Item and its internal styles */
+/* When cart is open, switch to 3 columns */
+.menu-main-content.menu-cart-open .menu-product-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .menu-product-item {
-  position: relative; /* Essential for the unavailable overlay */
   background-color: #f8fbfc;
   border-radius: 12px;
   padding: 20px;
+  min-height: 160px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: transform 0.2s, box-shadow 0.2s;
 }
 
 .menu-product-main {
   display: flex;
   gap: 15px;
-  align-items: center;
+  align-items: flex-start;
+  flex: 1;
+}
+
+.menu-product-main img {
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  object-fit: cover;
 }
 
 .menu-product-img-container {
@@ -169,13 +187,17 @@ body, html {
   flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
+  background-color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .menu-product-img-container img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: filter 0.3s ease; /* For grayscale effect */
+  display: block;
 }
 
 .menu-product-details {
@@ -183,53 +205,60 @@ body, html {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .menu-product-title {
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
+  line-height: 1.3;
+  color: #333;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
 .menu-product-description {
-  font-size: 12px;
+  font-size: 14px;
   color: #777;
   line-height: 1.4;
-  height: 2.8em; /* 2 lines */
-  overflow: hidden;
+  word-wrap: break-word;
 }
 
 .menu-product-price {
   font-size: 18px;
   font-weight: 600;
-  margin-top: 5px;
+  color: #333;
+  margin-top: auto;
 }
 
-/* Product Options (Hot/Iced, Size) - from Old CSS */
-.product-options {
+.menu-product-options {
   display: flex;
-  gap: 20px;
+  justify-content: flex-start;
+  gap: 30px;
+  padding: 0 10px;
   margin-top: 10px;
 }
 
-.option-section {
+.menu-option-section {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
 }
 
-.option-label {
+.menu-option-label {
   font-size: 13px;
   font-weight: 500;
-  color: #555;
+  color: #333;
+  margin-bottom: 2px;
 }
 
-.option-group {
+.menu-option-group {
   display: flex;
   gap: 8px;
 }
 
-.option {
+.menu-option {
   border: 1px solid #ccc;
   border-radius: 50%;
   width: 36px;
@@ -242,236 +271,178 @@ body, html {
   transition: 0.2s;
 }
 
-.option:hover {
+.menu-option:hover,
+.menu-option.active {
   border-color: #4197a2;
+  background-color: #e1f3f6;
 }
 
-/* Add to cart button */
-.add-button {
+.menu-add-button {
   padding: 12px;
   background-color: #4197a2;
   color: #fff;
   border: none;
   border-radius: 8px;
   font-weight: 500;
+  font-size: 14px;
   cursor: pointer;
   transition: 0.3s;
-  margin-top: auto; /* Pushes button to the bottom */
+  margin-top: auto;
+  min-height: 44px;
 }
 
-.add-button:hover {
+.menu-add-button:hover {
   background-color: #357b88;
 }
 
-.menu-no-products {
-  text-align: center;
-  padding: 50px;
-  font-size: 16px;
-  color: #888;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Responsive adjustments */
+@media (max-width: 1400px) {
+  .menu-product-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .menu-main-content.menu-cart-open .menu-product-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
-/* === UNAVAILABLE PRODUCT STYLES (from Old CSS) === */
-.unavailable-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(2px);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  pointer-events: none;
-}
-
-.unavailable-overlay span {
-  color: #333;
-  font-size: 18px;
-  font-weight: 700;
-  text-transform: uppercase;
-  border: 2px solid #333;
-  padding: 4px 12px;
-  border-radius: 6px;
-}
-
-.add-button:disabled {
-  background-color: #cccccc;
-  border-color: #cccccc;
-  color: #666666;
-  cursor: not-allowed;
-}
-.add-button:disabled:hover {
-  background-color: #cccccc; /* Prevent hover effect */
-}
-
-.menu-product-item:has(.unavailable-overlay) .menu-product-img-container img {
-  filter: grayscale(100%);
-}
-
-/* === CART PANEL STYLES (from Old CSS, Critical Section) === */
-.cart-panel {
-  position: fixed;
-  right: -380px; /* Hidden by default */
-  top: 0;
-  width: 380px;
-  height: 100%;
-  background: #fff;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
-  transition: right 0.3s ease-in-out;
-  z-index: 1000;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.cart-panel.open {
-  right: 0;
-}
-
-.order-section {
-  padding: 24px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.order-section h2 {
-  font-size: 24px;
-  margin: 0 0 20px 0;
-}
-
-.order-type-toggle {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 24px;
-}
-.order-type-toggle button {
-  flex: 1;
-  padding: 12px;
-  border: 1px solid #ddd;
-  background-color: #f5f5f5;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-}
-.order-type-toggle button.active {
-  background-color: #4197a2;
-  color: #fff;
-  border-color: #4197a2;
-}
-
-.cart-items {
-  flex: 1; /* This makes it take up available space */
-  overflow-y: auto;
-  min-height: 150px; /* Ensure it has some height even with few items */
-  padding-right: 10px;
-}
-
-.cart-item {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-.cart-item img {
-  width: 60px;
-  height: 60px;
-  object-fit: cover;
-  border-radius: 8px;
-}
-.item-details { flex: 1; min-width: 0; }
-.item-name { font-weight: 600; font-size: 16px; }
-.addons-link { font-size: 12px; color: #4197a2; cursor: pointer; text-decoration: underline; margin: 4px 0; }
-.addons-summary { font-size: 11px; color: #4197a2; display: flex; flex-wrap: wrap; gap: 4px; }
-.addons-summary span { background-color: #e1f3f6; padding: 2px 6px; border-radius: 4px; }
-.qty-price { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
-.qty-price button { width: 30px; height: 30px; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; }
-.item-price { font-weight: 600; margin-left: auto; }
-.remove-item { background: none; border: none; color: #ff4444; cursor: pointer; padding: 0; }
-
-
-.discount-section { padding-top: 20px; border-top: 1px solid #eee; }
-.discount-section input { width: 100%; padding: 12px; border: 1px solid #e0e0e0; border-radius: 8px; margin-bottom: 16px; }
-.summary { background-color: #f8f9fa; padding: 16px; border-radius: 8px; }
-.summary .line { display: flex; justify-content: space-between; margin: 6px 0; }
-.summary hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
-.summary .total { font-weight: 700; font-size: 16px; }
-
-.payment-section { margin-top: 24px; }
-.payment-section h3 { font-size: 18px; margin: 0 0 16px 0; }
-.payment-options { display: flex; gap: 12px; margin-bottom: 24px; }
-.payment-options button { flex: 1; padding: 16px 12px; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; }
-.payment-options button.active { border-color: #4197a2; background-color: #e1f3f6; }
-.payment-options svg { font-size: 24px; color: #4197a2; }
-
-.process-button { width: 100%; padding: 16px; background-color: #4197a2; color: white; font-weight: 600; border: none; border-radius: 8px; cursor: pointer; }
-.process-button:hover { background-color: #357b88; }
-
-/* === ADD-ONS MODAL STYLES (from Old CSS, Critical Section) === */
-.modal-overlay {
-  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex; justify-content: center; align-items: center; z-index: 2000;
-}
-.addons-modal {
-  background: white; border-radius: 12px; width: 90%; max-width: 450px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-  animation: modalSlideIn 0.3s ease-out;
-}
-@keyframes modalSlideIn {
-  from { opacity: 0; transform: translateY(-30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid #eee; }
-.modal-header h3 { margin: 0; font-size: 20px; }
-.close-modal { background: none; border: none; font-size: 24px; cursor: pointer; }
-.addons-content { padding: 24px; }
-.addon-item { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid #f0f0f0; }
-.addon-item:last-child { border-bottom: none; }
-.addon-info { display: flex; flex-direction: column; gap: 4px; }
-.addon-name { font-size: 16px; }
-.addon-price { font-size: 14px; color: #4197a2; }
-.addon-controls { display: flex; align-items: center; gap: 12px; }
-.addon-controls button { width: 36px; height: 36px; border: 1px solid #ddd; background: white; border-radius: 8px; cursor: pointer; font-size: 18px; }
-.addon-controls button:hover { border-color: #4197a2; color: #4197a2; }
-.addon-controls span { font-size: 16px; min-width: 24px; text-align: center; }
-.modal-footer { display: flex; gap: 12px; padding: 20px 24px; border-top: 1px solid #eee; background-color: #fafafa; }
-.cancel-btn, .save-btn { flex: 1; padding: 12px 20px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; }
-.cancel-btn { background-color: #f5f5f5; color: #666; }
-.save-btn { background-color: #4197a2; color: white; }
-
-/* === RESPONSIVE STYLES === */
 @media (max-width: 1024px) {
-  .menu-page-content {
-    flex-direction: column;
-    margin-right: 0 !important; /* Override margin for stacked layout */
+  .menu-product-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
-  .menu-category-sidebar {
-    width: 100%;
-    height: auto;
-    max-height: 200px; /* Limit height when stacked */
-    display: flex;
-    flex-wrap: wrap;
-    gap: 15px;
-  }
-  .cart-panel {
-    width: 80%;
-    right: -80%;
-  }
-  .cart-panel.open {
-    right: 0;
+  
+  .menu-main-content.menu-cart-open .menu-product-grid {
+    grid-template-columns: repeat(1, 1fr);
   }
 }
 
 @media (max-width: 768px) {
-  .cart-panel {
-    width: 100%;
-    right: -100%;
+  .menu-product-grid {
+    grid-template-columns: repeat(1, 1fr);
+    justify-items: center;
   }
+  
+  .menu-main-content.menu-cart-open .menu-product-grid {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
+  .menu-product-item {
+    width: 100%;
+    max-width: 400px;
+  }
+}
+
+.menu-all-products-view {
+  width: 100%;
+}
+
+.menu-all-products-btn {
+  color: #4197a2;
+  font-weight: 700;
+  font-size: 18px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.menu-all-products-btn:hover,
+.menu-all-products-btn.active {
+  color: #357b88;
+}
+
+.menu-product-group {
+  margin-bottom: 40px;
+}
+
+.menu-group-section-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-top: 20px;
+  color: #000000;
+}
+
+.menu-category-section {
+  margin-bottom: 35px;
+}
+
+.menu-category-section-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  margin-top: 0;
+  color: #4197a2;
+  padding-left: 10px;
+  border-left: 4px solid #4197a2;
+}
+
+.menu-main-content {
+  flex: 1;
+  padding-right: 50px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.menu-main-content.menu-cart-open {
+  margin-right: 400px;
+}
+
+.menu-no-products {
+  text-align: center;
+  padding: 40px;
+  font-size: 16px;
+  color: #666;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* --- Add these styles to your menu.css file --- */
+
+/* Make the product item a positioning container for the overlay */
+.menu-product-item {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Style for the "Not Available" overlay */
+.menu-product-unavailable-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(50, 50, 50, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  text-align: center;
+  z-index: 5;
+  border-radius: 12px;
+}
+
+/* Style for the disabled "Add Product" button */
+.menu-add-button:disabled {
+  background-color: #cccccc;
+  border-color: #b0b0b0;
+  color: #666666;
+  cursor: not-allowed;
+}
+
+.menu-add-button:disabled:hover {
+  background-color: #cccccc;
+}
+
+/* Style for a loading or error message container */
+.menu-status-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 50vh;
+  font-size: 1.5rem;
+  color: #555;
 }

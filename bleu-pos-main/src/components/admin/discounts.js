@@ -7,7 +7,7 @@ import DataTable from "react-data-table-component";
 import { DEFAULT_PROFILE_IMAGE } from "./employeeRecords"; 
 
 const API_BASE_URL_DISCOUNTS = "http://localhost:9002";
-const API_BASE_URL_PRODUCTS = "http://localhost:9001"; 
+const API_BASE_URL_PRODUCTS = "http://127.0.0.1:8001"; 
 
 const currentDate = new Date().toLocaleString("en-US", {
   weekday: "long",
@@ -136,7 +136,7 @@ function Discounts() {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL_PRODUCTS}/Products/products/`, {
+      const response = await fetch(`${API_BASE_URL_PRODUCTS}/is_products/products/`, {
         headers: { "Authorization": `Bearer ${token}` }, 
       });
       if (!response.ok) {
