@@ -1,23 +1,29 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 from decimal import Decimal
 import json
 import sys
 import os
-import httpx # Required for making HTTP requests to the auth service
+import httpx
+import logging # --- NEW --- Added for better error logging
+
+# --- NEW --- Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth Configuration ---
-# This scheme expects a Bearer token in the Authorization header.
-# The tokenUrl points to the endpoint that provides the token (in your auth service).
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
 USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
 
-router_sales = APIRouter(prefix="/sales", tags=["sales"])
+# --- NEW --- URL for the Inventory Management System's deduction endpoint
+IMS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
+
+router_sales = APIRouter(prefix="/auth/sales", tags=["sales"])
 
 ADDON_PRICES = {
     'espressoShots': Decimal('25.00'),
@@ -38,36 +44,57 @@ class Sale(BaseModel):
     paymentMethod: str
     appliedDiscounts: List[str]
 
-# --- Authorization Helper Function ---
+# --- Authorization Helper Function (No changes needed here) ---
 async def get_current_active_user(token: str = Depends(oauth2_scheme)):
-    """
-    Dependency to validate the token with the auth service and return the current user's data.
-    This function will be called automatically by FastAPI for endpoints that depend on it.
-    """
     async with httpx.AsyncClient() as client:
         try:
-            # Call the auth service's /users/me endpoint with the provided token
             response = await client.get(USER_SERVICE_ME_URL, headers={"Authorization": f"Bearer {token}"})
-            response.raise_for_status()  # Raises an exception for 4xx or 5xx status codes
+            response.raise_for_status()
         except httpx.HTTPStatusError as e:
-            # If the auth service returns an error (e.g., 401 Unauthorized), re-raise it as an HTTPException
             raise HTTPException(
                 status_code=e.response.status_code,
                 detail=f"Invalid token or user not found: {e.response.text}",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except httpx.RequestError:
-            # If the auth service is unreachable
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Could not connect to the authentication service."
             )
+    return response.json()
+
+# --- NEW --- Helper function to call the IMS and deduct inventory ---
+async def trigger_inventory_deduction(cart_items: List[SaleItem], token: str):
+    """
+    Calls the IMS to deduct ingredients for the sold items.
+    This is a "fire-and-forget" call with critical logging on failure.
+    """
+    logger.info("Triggering inventory deduction in IMS.")
     
-    user_data = response.json()
-    # You could add a check here if your user model has an "is_active" flag
-    # if not user_data.get("is_active"):
-    #     raise HTTPException(status_code=400, detail="Inactive user")
-    return user_data
+    # The IMS endpoint expects a list of items with 'name' and 'quantity'.
+    # We format the payload to match the `DeductSaleRequest` model in the IMS.
+    payload = {
+        "cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]
+    }
+    
+    # We must pass the original authorization token to the IMS.
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(IMS_DEDUCT_URL, json=payload, headers=headers)
+            # Raise an exception if the IMS returns an error (4xx or 5xx)
+            response.raise_for_status()
+            logger.info("Successfully requested inventory deduction from IMS.")
+    except httpx.HTTPStatusError as e:
+        # This is a critical error. The sale was made, but inventory is now out of sync.
+        # This needs to be logged for manual review or an automated alert.
+        logger.critical(
+            f"INVENTORY-SYNC-FAILURE: Sale processed, but failed to deduct inventory in IMS. "
+            f"Status: {e.response.status_code}, Response: {e.response.text}"
+        )
+    except Exception as e:
+        logger.critical(f"INVENTORY-SYNC-FAILURE: An unexpected error occurred while contacting IMS: {e}")
 
 
 async def calculate_totals_and_discounts(sale_data: Sale, cursor):
@@ -91,9 +118,7 @@ async def calculate_totals_and_discounts(sale_data: Sale, cursor):
     sql_fetch_discounts = f"""
         SELECT DiscountID, DiscountName, DiscountType, PercentageValue, FixedValue, MinimumSpend
         FROM Discounts
-        WHERE DiscountName IN ({placeholders})
-          AND Status = 'Active'
-          AND GETUTCDATE() BETWEEN ValidFrom AND ValidTo
+        WHERE DiscountName IN ({placeholders}) AND Status = 'Active' AND GETUTCDATE() BETWEEN ValidFrom AND ValidTo
     """
     await cursor.execute(sql_fetch_discounts, sale_data.appliedDiscounts)
     valid_discounts = await cursor.fetchall()
@@ -112,18 +137,17 @@ async def calculate_totals_and_discounts(sale_data: Sale, cursor):
     final_discount = min(total_discount_amount, subtotal)
     return subtotal, final_discount, applied_discounts_details
 
-# --- API Endpoint with Authorization ---
+# --- API Endpoint with Authorization AND Inventory Deduction ---
 @router_sales.post("/", status_code=status.HTTP_201_CREATED)
-async def create_sale(sale: Sale, current_user: dict = Depends(get_current_active_user)):
+# --- NEW --- We now depend on the raw token string in addition to the validated user data.
+async def create_sale(
+    sale: Sale, 
+    token: str = Depends(oauth2_scheme),
+    current_user: dict = Depends(get_current_active_user)
+):
     """
-    Creates a new sale record.
-
-    This endpoint is protected and requires a valid Bearer token.
-    - **Authorization**: The user's role is checked.
-    - **Transaction**: All database operations are wrapped in a transaction.
-    - **Cashier Name**: The cashier's name is automatically retrieved from the user token.
+    Creates a new sale record and triggers inventory deduction.
     """
-    # 1. Role-based access control
     allowed_roles = ["admin", "manager", "staff", "cashier"]
     if current_user.get("userRole") not in allowed_roles:
         raise HTTPException(
@@ -135,55 +159,30 @@ async def create_sale(sale: Sale, current_user: dict = Depends(get_current_activ
     try:
         conn = await get_db_connection()
         async with conn.cursor() as cursor:
-            # A transaction is implicitly started on the first execute.
-            
-            # 2. Calculate totals
             subtotal, total_discount, discount_details = await calculate_totals_and_discounts(sale, cursor)
-            
-            # 3. Get cashier name from the validated token payload
-            cashier_name = current_user.get("username", "SystemUser") # Safely get username
+            cashier_name = current_user.get("username", "SystemUser")
 
-            # 4. Insert into the main `Sales` table
-            sql_sale = """
-                INSERT INTO Sales (OrderType, PaymentMethod, CashierName, TotalDiscountAmount)
-                OUTPUT INSERTED.SaleID
-                VALUES (?, ?, ?, ?)
-            """
-            await cursor.execute(
-                sql_sale,
-                sale.orderType, sale.paymentMethod, cashier_name, total_discount
-            )
+            sql_sale = "INSERT INTO Sales (OrderType, PaymentMethod, CashierName, TotalDiscountAmount) OUTPUT INSERTED.SaleID VALUES (?, ?, ?, ?)"
+            await cursor.execute(sql_sale, sale.orderType, sale.paymentMethod, cashier_name, total_discount)
             sale_id_row = await cursor.fetchone()
             if not sale_id_row or not sale_id_row[0]:
                 raise HTTPException(status_code=500, detail="Failed to create sale record.")
             sale_id = sale_id_row[0]
 
-            # 5. Insert each item into the `SaleItems` table
             for item in sale.cartItems:
-                sql_item = """
-                    INSERT INTO SaleItems (SaleID, ItemName, Quantity, UnitPrice, Category, Addons)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """
+                sql_item = "INSERT INTO SaleItems (SaleID, ItemName, Quantity, UnitPrice, Category, Addons) VALUES (?, ?, ?, ?, ?, ?)"
                 addons_str = json.dumps(item.addons) if item.addons else None
-                await cursor.execute(
-                    sql_item,
-                    sale_id, item.name, item.quantity, Decimal(str(item.price)), 
-                    item.category, addons_str
-                )
+                await cursor.execute(sql_item, sale_id, item.name, item.quantity, Decimal(str(item.price)), item.category, addons_str)
 
-            # 6. Insert into the `SaleDiscounts` junction table
             for discount in discount_details:
-                sql_sale_discount = """
-                    INSERT INTO SaleDiscounts (SaleID, DiscountID, DiscountAppliedAmount)
-                    VALUES (?, ?, ?)
-                """
-                await cursor.execute(
-                    sql_sale_discount,
-                    sale_id, discount['id'], discount['amount']
-                )
+                sql_sale_discount = "INSERT INTO SaleDiscounts (SaleID, DiscountID, DiscountAppliedAmount) VALUES (?, ?, ?)"
+                await cursor.execute(sql_sale_discount, sale_id, discount['id'], discount['amount'])
 
-            # If all steps succeed, commit the changes to the database.
+            # If all DB steps succeed, commit the changes.
             await conn.commit()
+            
+            # --- NEW --- After the sale is successfully committed, trigger inventory deduction.
+            await trigger_inventory_deduction(cart_items=sale.cartItems, token=token)
             
             final_total = subtotal - total_discount
             return {
@@ -192,15 +191,10 @@ async def create_sale(sale: Sale, current_user: dict = Depends(get_current_activ
                 "discountAmount": float(total_discount),
                 "finalTotal": float(final_total)
             }
-
     except Exception as e:
-        if conn:
-            await conn.rollback()
-        # Avoid raising the original exception directly to prevent leaking implementation details
+        if conn: await conn.rollback()
         if not isinstance(e, HTTPException):
              raise HTTPException(status_code=500, detail=f"An unexpected error occurred while processing the sale.")
-        raise e # Re-raise known HTTPExceptions
-    
+        raise e
     finally:
-        if conn:
-            await conn.close()
+        if conn: await conn.close()

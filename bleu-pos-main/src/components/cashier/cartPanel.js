@@ -238,8 +238,7 @@ const CartPanel = ({
     };
 
     try {
-        // This now correctly points to http://127.0.0.1:9000/auth/sales/
-        const response = await fetch(`${SALES_API_URL}/auth/sales/`, {
+        const response = await fetch(`${SALES_API_URL}/auth/auth/sales/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

@@ -3,7 +3,6 @@ import Navbar from '../navbar';
 import CartPanel from './cartPanel.js';
 import './menu.css';
 
-// 1. Define the base URL to avoid repetition
 const API_BASE_URL = 'http://127.0.0.1:8001';
 
 function Menu() {
@@ -26,18 +25,48 @@ function Menu() {
   const [loggedInUser, setLoggedInUser] = useState(null);
 
   useEffect(() => {
-    // This effect runs once when the component mounts
-    const username = localStorage.getItem('username');
-    // --- CONSOLE LOG ADDED ---
-    console.log("Retrieved username from localStorage:", username); 
-    if (username) {
-      setLoggedInUser(username);
+    // --- NEW AUTHENTICATION LOGIC ---
+    // This effect now handles the handoff from the login system.
+    
+    const params = new URLSearchParams(window.location.search);
+    const urlUsername = params.get('username');
+    const urlToken = params.get('authorization');
+    
+    let activeToken = null;
+    let activeUsername = null;
+
+    // 1. Check if credentials are in the URL (fresh login from another system)
+    if (urlUsername && urlToken) {
+      console.log("Found credentials in URL. Setting up new session.");
+      
+      // 2. Save the new credentials to this app's localStorage
+      localStorage.setItem('username', urlUsername);
+      localStorage.setItem('authToken', urlToken);
+
+      // 3. Set the active user and token for the current render
+      activeToken = urlToken;
+      activeUsername = urlUsername;
+      
+      // 4. (Best Practice) Clean the URL so the token isn't visible or bookmarkable
+      window.history.replaceState({}, document.title, window.location.pathname);
+
+    } else {
+      // 5. Fallback: If no credentials in URL, read from localStorage (user is already in this app)
+      console.log("No credentials in URL. Reading from localStorage.");
+      activeToken = localStorage.getItem('authToken');
+      activeUsername = localStorage.getItem('username');
+    }
+
+    // Set the user for the Navbar
+    if (activeUsername) {
+      setLoggedInUser(activeUsername);
     }
     
-    const fetchAndSetProducts = async () => {
+    // --- DATA FETCHING LOGIC (now uses the correct token) ---
+
+    const fetchAndSetProducts = async (token) => {
       setIsLoading(true);
       setError(null);
-      const token = localStorage.getItem('authToken');
 
       if (!token) {
         setError("Authorization Error. Please log in.");
@@ -47,16 +76,13 @@ function Menu() {
 
       try {
         const headers = { 'Authorization': `Bearer ${token}` };
-        // --- CONSOLE LOG ADDED ---
         console.log("Authorization header being sent for API requests:", headers);
 
-        // 2. Fetch from BOTH endpoints using Promise.all for efficiency
         const [detailsResponse, productsResponse] = await Promise.all([
           fetch(`${API_BASE_URL}/is_products/products/details/`, { headers }),
-          fetch(`${API_BASE_URL}/is_products/products/`, { headers }) // Endpoint with images
+          fetch(`${API_BASE_URL}/is_products/products/`, { headers })
         ]);
         
-        // Check for authorization errors first
         if (detailsResponse.status === 401 || productsResponse.status === 401) {
           throw new Error("Your session is invalid or has expired. Please log in again.");
         }
@@ -65,16 +91,13 @@ function Menu() {
         }
         
         const apiDetails = await detailsResponse.json();
-        const apiProducts = await productsResponse.json(); // This contains the images
+        const apiProducts = await productsResponse.json(); 
 
-        // 3. Create a lookup map for images from the /products/ response
-        // This makes it easy to find the image for a product by its name.
         const imageMap = apiProducts.reduce((map, product) => {
           map[product.ProductName] = product.ProductImage;
           return map;
         }, {});
 
-        // 4. Map over the details data, but use the `imageMap` to get the correct image
         const placeholderImage = 'https://images.unsplash.com/photo-1509042239860-f550ce710b93';
         const mappedProducts = apiDetails.map(p => ({
           name: p.ProductName,
@@ -82,15 +105,13 @@ function Menu() {
           price: p.Price,
           category: p.ProductCategory,
           status: p.Status,
-          // Use the image from our map, or fall back to the placeholder
           image: imageMap[p.ProductName] || placeholderImage, 
         }));
         setProducts(mappedProducts);
 
-        // This category generation logic remains correct
         const dynamicCategories = {};
         apiDetails.forEach(p => {
-          const group = p.ProductTypeName.toUpperCase() + 'S'; // e.g., "DRINKS"
+          const group = p.ProductTypeName.toUpperCase() + 'S';
           const category = p.ProductCategory;
           if (!dynamicCategories[group]) dynamicCategories[group] = [];
           if (!dynamicCategories[group].includes(category)) dynamicCategories[group].push(category);
@@ -105,8 +126,10 @@ function Menu() {
       }
     };
 
-    fetchAndSetProducts();
-  }, []); // Empty dependency array ensures this runs only once
+    // Call the fetch function with the determined token
+    fetchAndSetProducts(activeToken);
+
+  }, []); // Empty dependency array ensures this runs only once on component mount
 
   useEffect(() => {
     setIsCartOpen(cartItems.length > 0);
@@ -127,10 +150,8 @@ function Menu() {
 
   const addToCart = (product) => {
     if (product.status === 'Unavailable') return;
-
     const defaultAddons = { espressoShots: 0, seaSaltCream: 0, syrupSauces: 0 };
     const existingIndex = cartItems.findIndex(item => item.name === product.name);
-
     if (existingIndex !== -1) {
       const updatedCart = [...cartItems];
       updatedCart[existingIndex].quantity += 1;
