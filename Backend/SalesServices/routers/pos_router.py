@@ -7,20 +7,20 @@ import json
 import sys
 import os
 import httpx
-import logging # --- NEW --- Added for better error logging
+import logging 
 
-# --- NEW --- Configure logging
+# --- Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
-# --- Auth Configuration ---
+# Auth Configuration ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
 USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
 
-# --- NEW --- URL for the Inventory Management System's deduction endpoint
+# URL for the Inventory Management System's deduction endpoint
 IMS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
 
 router_sales = APIRouter(prefix="/auth/sales", tags=["sales"])
@@ -44,7 +44,7 @@ class Sale(BaseModel):
     paymentMethod: str
     appliedDiscounts: List[str]
 
-# --- Authorization Helper Function (No changes needed here) ---
+# --- Authorization Helper Function ---
 async def get_current_active_user(token: str = Depends(oauth2_scheme)):
     async with httpx.AsyncClient() as client:
         try:
@@ -63,7 +63,7 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
             )
     return response.json()
 
-# --- NEW --- Helper function to call the IMS and deduct inventory ---
+# --- Helper function to call the IMS and deduct inventory ---
 async def trigger_inventory_deduction(cart_items: List[SaleItem], token: str):
     """
     Calls the IMS to deduct ingredients for the sold items.
@@ -71,24 +71,20 @@ async def trigger_inventory_deduction(cart_items: List[SaleItem], token: str):
     """
     logger.info("Triggering inventory deduction in IMS.")
     
-    # The IMS endpoint expects a list of items with 'name' and 'quantity'.
-    # We format the payload to match the `DeductSaleRequest` model in the IMS.
+    
     payload = {
         "cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]
     }
     
-    # We must pass the original authorization token to the IMS.
     headers = {"Authorization": f"Bearer {token}"}
     
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(IMS_DEDUCT_URL, json=payload, headers=headers)
-            # Raise an exception if the IMS returns an error (4xx or 5xx)
             response.raise_for_status()
             logger.info("Successfully requested inventory deduction from IMS.")
     except httpx.HTTPStatusError as e:
-        # This is a critical error. The sale was made, but inventory is now out of sync.
-        # This needs to be logged for manual review or an automated alert.
+        
         logger.critical(
             f"INVENTORY-SYNC-FAILURE: Sale processed, but failed to deduct inventory in IMS. "
             f"Status: {e.response.status_code}, Response: {e.response.text}"
@@ -98,7 +94,6 @@ async def trigger_inventory_deduction(cart_items: List[SaleItem], token: str):
 
 
 async def calculate_totals_and_discounts(sale_data: Sale, cursor):
-    # This function is correct and does not need changes.
     subtotal = Decimal('0.0')
     for item in sale_data.cartItems:
         item_price = Decimal(str(item.price))
@@ -181,7 +176,6 @@ async def create_sale(
             # If all DB steps succeed, commit the changes.
             await conn.commit()
             
-            # --- NEW --- After the sale is successfully committed, trigger inventory deduction.
             await trigger_inventory_deduction(cart_items=sale.cartItems, token=token)
             
             final_total = subtotal - total_discount
