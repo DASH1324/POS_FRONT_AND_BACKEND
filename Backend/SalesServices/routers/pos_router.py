@@ -1,3 +1,5 @@
+# sales_router.py
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, Field
@@ -16,12 +18,14 @@ logger = logging.getLogger(__name__)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
-# Auth Configuration ---
+# --- Auth and Service URL Configuration ---
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
 USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
 
-# URL for the Inventory Management System's deduction endpoint
-IMS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
+# --- URLs for Inventory Deduction Endpoints ---
+# NOTE: Use the correct URLs for your services. The inventory service might be on one port.
+INGREDIENTS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/ingredients/deduct-from-sale"
+MATERIALS_DEDUCT_URL = "http://127.0.0.1:8003/materials/materials/deduct-from-sale"
 
 router_sales = APIRouter(prefix="/auth/sales", tags=["sales"])
 
@@ -63,35 +67,35 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme)):
             )
     return response.json()
 
-# --- Helper function to call the IMS and deduct inventory ---
-async def trigger_inventory_deduction(cart_items: List[SaleItem], token: str):
-    """
-    Calls the IMS to deduct ingredients for the sold items.
-    This is a "fire-and-forget" call with critical logging on failure.
-    """
-    logger.info("Triggering inventory deduction in IMS.")
-    
-    
-    payload = {
-        "cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]
-    }
-    
+# --- Helper functions to call Inventory Services ---
+
+async def trigger_ingredients_deduction(cart_items: List[SaleItem], token: str):
+    """Calls the Inventory Service to deduct INGREDIENTS for the sold items."""
+    logger.info("Triggering INGREDIENT deduction.")
+    payload = {"cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]}
     headers = {"Authorization": f"Bearer {token}"}
-    
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(IMS_DEDUCT_URL, json=payload, headers=headers)
+            response = await client.post(INGREDIENTS_DEDUCT_URL, json=payload, headers=headers)
             response.raise_for_status()
-            logger.info("Successfully requested inventory deduction from IMS.")
-    except httpx.HTTPStatusError as e:
-        
-        logger.critical(
-            f"INVENTORY-SYNC-FAILURE: Sale processed, but failed to deduct inventory in IMS. "
-            f"Status: {e.response.status_code}, Response: {e.response.text}"
-        )
+            logger.info("Successfully requested INGREDIENT deduction.")
     except Exception as e:
-        logger.critical(f"INVENTORY-SYNC-FAILURE: An unexpected error occurred while contacting IMS: {e}")
+        logger.critical(f"INGREDIENT-SYNC-FAILURE: Sale processed, but failed to deduct ingredients. Error: {e}")
 
+async def trigger_materials_deduction(cart_items: List[SaleItem], token: str):
+    """Calls the Inventory Service to deduct MATERIALS for the sold items."""
+    logger.info("Triggering MATERIAL deduction.")
+    payload = {"cartItems": [{"name": item.name, "quantity": item.quantity} for item in cart_items]}
+    headers = {"Authorization": f"Bearer {token}"}
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(MATERIALS_DEDUCT_URL, json=payload, headers=headers)
+            response.raise_for_status()
+            logger.info("Successfully requested MATERIAL deduction.")
+    except Exception as e:
+        logger.critical(f"MATERIAL-SYNC-FAILURE: Sale processed, but failed to deduct materials. Error: {e}")
+
+# --- Helper function for calculations ---
 
 async def calculate_totals_and_discounts(sale_data: Sale, cursor):
     subtotal = Decimal('0.0')
@@ -132,16 +136,15 @@ async def calculate_totals_and_discounts(sale_data: Sale, cursor):
     final_discount = min(total_discount_amount, subtotal)
     return subtotal, final_discount, applied_discounts_details
 
-# --- API Endpoint with Authorization AND Inventory Deduction ---
+# --- API Endpoint to Create a Sale ---
 @router_sales.post("/", status_code=status.HTTP_201_CREATED)
-# --- NEW --- We now depend on the raw token string in addition to the validated user data.
 async def create_sale(
     sale: Sale, 
     token: str = Depends(oauth2_scheme),
     current_user: dict = Depends(get_current_active_user)
 ):
     """
-    Creates a new sale record and triggers inventory deduction.
+    Creates a new sale record and triggers both ingredient and material inventory deduction.
     """
     allowed_roles = ["admin", "manager", "staff", "cashier"]
     if current_user.get("userRole") not in allowed_roles:
@@ -176,7 +179,10 @@ async def create_sale(
             # If all DB steps succeed, commit the changes.
             await conn.commit()
             
-            await trigger_inventory_deduction(cart_items=sale.cartItems, token=token)
+            # After committing the sale, trigger inventory deductions.
+            # This is a "fire-and-forget" approach. We log failures but don't roll back the sale.
+            await trigger_ingredients_deduction(cart_items=sale.cartItems, token=token)
+            await trigger_materials_deduction(cart_items=sale.cartItems, token=token)
             
             final_total = subtotal - total_discount
             return {
@@ -187,6 +193,7 @@ async def create_sale(
             }
     except Exception as e:
         if conn: await conn.rollback()
+        logger.error(f"Error processing sale: {e}", exc_info=True)
         if not isinstance(e, HTTPException):
              raise HTTPException(status_code=500, detail=f"An unexpected error occurred while processing the sale.")
         raise e

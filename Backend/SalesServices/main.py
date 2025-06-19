@@ -14,8 +14,12 @@ app.add_middleware(
         "http://192.168.100.32:4001",  # React frontend (local network)
         "http://localhost:4000",
         "http://127.0.0.1:4000", 
-         "http://localhost:3000",     
-        "http://192.168.100.32:3000"     
+        "http://192.168.100.14:4002", # ums frontend
+        "http://localhost:4002",
+          "http://192.168.100.14:8002", # ums frontend
+        "http://localhost:8002",  # ums frontend    
+        "http://192.168.100.14:8003", # ums frontend
+        "http://localhost:8003",
     ],
     allow_credentials=True,
     allow_methods=["*"],
