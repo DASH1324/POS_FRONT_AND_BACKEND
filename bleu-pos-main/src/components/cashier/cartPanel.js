@@ -238,7 +238,7 @@ const CartPanel = ({
     };
 
     try {
-        const response = await fetch(`${SALES_API_URL}/auth/auth/sales/`, {
+        const response = await fetch(`${SALES_API_URL}/auth/sales/`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
