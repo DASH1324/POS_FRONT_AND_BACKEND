@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-# Import the new Pydantic V2 decorators
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Optional
 import httpx
@@ -18,33 +17,38 @@ except ImportError:
     async def get_db_connection():
         raise NotImplementedError("Database connection not configured.")
 
-# --- Router and Auth (Left as is) ---
+# --- Router and Auth ---
 router_discounts = APIRouter(prefix="/discounts", tags=["discounts"])
 oauth2_scheme_port4000 = OAuth2PasswordBearer(tokenUrl="http://localhost:4000/auth/token")
 
 async def validate_token_and_roles_port4000(token: str, allowed_roles: List[str]):
     auth_url = "http://localhost:4000/auth/users/me"
     async with httpx.AsyncClient() as client:
-        response = await client.get(auth_url, headers={"Authorization": f"Bearer {token}"})
-        response.raise_for_status()
+        try:
+            response = await client.get(auth_url, headers={"Authorization": f"Bearer {token}"})
+            response.raise_for_status()
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Auth service is unavailable: {exc}")
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(status_code=exc.response.status_code, detail="Invalid or expired token.")
+
     user_data = response.json()
     if user_data.get("userRole") not in allowed_roles:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied for this role.")
     return user_data
 
 async def get_admin_or_manager(token: str = Depends(oauth2_scheme_port4000)) -> dict:
-    return await validate_token_and_roles_port4000(token=token, allowed_roles=["admin", "manager", "cashier"])
+    return await validate_token_and_roles_port4000(token=token, allowed_roles=["admin", "manager"])
 
 async def get_any_user(token: str = Depends(oauth2_scheme_port4000)) -> dict:
     return await validate_token_and_roles_port4000(token=token, allowed_roles=["admin", "manager", "cashier"])
 
-# --- CORRECTED Pydantic Models for Discounts (Using Pydantic V2 Syntax) ---
-
+# --- Pydantic Models (Unchanged) ---
 class DiscountBase(BaseModel):
     DiscountName: str
     Description: Optional[str] = None
     ProductName: Optional[str] = None
-    DiscountType: str # 'Percentage' or 'Fixed'
+    DiscountType: str
     PercentageValue: Optional[Decimal] = Field(None, gt=0, lt=100)
     FixedValue: Optional[Decimal] = Field(None, ge=0)
     MinimumSpend: Optional[Decimal] = Field(None, ge=0)
@@ -52,21 +56,17 @@ class DiscountBase(BaseModel):
     ValidTo: datetime
     Status: str
     
-    # Use the new @field_validator for single-field validation
     @field_validator('DiscountType')
     def discount_type_must_be_valid(cls, v: str) -> str:
         if v not in ['Percentage', 'Fixed']:
             raise ValueError("DiscountType must be either 'Percentage' or 'Fixed'")
         return v
         
-    # Use the new @model_validator for cross-field validation
     @model_validator(mode='after')
     def check_dates_and_conditional_values(self) -> 'DiscountBase':
-        # 1. Check date range
         if self.ValidFrom and self.ValidTo and self.ValidTo <= self.ValidFrom:
             raise ValueError('ValidTo date must be after ValidFrom date')
 
-        # 2. Check conditional fields based on DiscountType
         if self.DiscountType == 'Percentage' and self.PercentageValue is None:
             raise ValueError('PercentageValue is required for Percentage type discounts')
         
@@ -97,16 +97,17 @@ class DiscountOut(BaseModel):
     CreatedAt: datetime
     
     class Config:
-        from_attributes = True # Pydantic V2 uses from_attributes instead of orm_mode
+        from_attributes = True
 
-# --- CRUD Endpoints (Largely unchanged, but will now work with the corrected models) ---
+# --- CRUD Endpoints ---
 
 @router_discounts.post("/", response_model=DiscountOut, status_code=status.HTTP_201_CREATED)
 async def create_discount(discount_data: DiscountCreate, current_user: dict = Depends(get_admin_or_manager)):
+    username = current_user.get("username", "unknown_user") 
     conn = None
-    username = current_user.get("username", "unknown")
     try:
         conn = await get_db_connection()
+        # FIX: Removed `as_dict=True` which is not supported by pyodbc
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountName = ?", discount_data.DiscountName)
             if await cursor.fetchone():
@@ -127,14 +128,21 @@ async def create_discount(discount_data: DiscountCreate, current_user: dict = De
                 discount_data.MinimumSpend, discount_data.ValidFrom, discount_data.ValidTo,
                 username, discount_data.Status
             )
+            # FIX: Manually convert the single-row result to a dictionary
+            columns = [column[0] for column in cursor.description]
             row = await cursor.fetchone()
             await conn.commit()
-            return row
-    except ValueError as ve: # Catch validation errors from the model
+            
+            if not row:
+                raise HTTPException(status_code=500, detail="Failed to create discount, no record returned.")
+                
+            return dict(zip(columns, row))
+            
+    except ValueError as ve: 
         raise HTTPException(status_code=422, detail=str(ve))
     except Exception as e:
         if conn: await conn.rollback()
-        raise HTTPException(status_code=500, detail=f"Error creating discount: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error creating discount: {e}")
     finally:
         if conn: await conn.close()
 
@@ -143,6 +151,7 @@ async def get_all_discounts(active_only: bool = False, current_user: dict = Depe
     conn = None
     try:
         conn = await get_db_connection()
+        # FIX: Removed `as_dict=True` which is not supported by pyodbc
         async with conn.cursor() as cursor:
             sql = "SELECT * FROM Discounts"
             if active_only:
@@ -150,8 +159,13 @@ async def get_all_discounts(active_only: bool = False, current_user: dict = Depe
             sql += " ORDER BY DiscountID DESC"
             
             await cursor.execute(sql)
+            
+            # FIX: Manually convert tuple results into a list of dictionaries
+            columns = [column[0] for column in cursor.description]
             rows = await cursor.fetchall()
-            return rows
+            
+            return [dict(zip(columns, row)) for row in rows]
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching discounts: {e}")
     finally:
@@ -162,12 +176,19 @@ async def get_discount_by_id(discount_id: int, current_user: dict = Depends(get_
     conn = None
     try:
         conn = await get_db_connection()
+        # FIX: Removed `as_dict=True` which is not supported by pyodbc
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT * FROM Discounts WHERE DiscountID = ?", discount_id)
+            
+            # FIX: Manually convert the single-row result to a dictionary
+            columns = [column[0] for column in cursor.description]
             row = await cursor.fetchone()
+            
             if not row:
                 raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} not found.")
-            return row
+                
+            return dict(zip(columns, row))
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching discount: {e}")
     finally:
@@ -176,9 +197,10 @@ async def get_discount_by_id(discount_id: int, current_user: dict = Depends(get_
 @router_discounts.put("/{discount_id}", response_model=DiscountOut)
 async def update_discount(discount_id: int, discount_data: DiscountUpdate, current_user: dict = Depends(get_admin_or_manager)):
     conn = None
-    username = current_user.get("username", "unknown")
+    username = current_user.get("username", "unknown_user")
     try:
         conn = await get_db_connection()
+        # FIX: Removed `as_dict=True`
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountID = ?", discount_id)
             if not await cursor.fetchone():
@@ -200,13 +222,38 @@ async def update_discount(discount_id: int, discount_data: DiscountUpdate, curre
             )
             await conn.commit()
             
-            # Fetch and return the updated row
-            # We can reuse the get_discount_by_id function here
+            # This function is now fixed, so calling it will work correctly.
             return await get_discount_by_id(discount_id, current_user)
-    except ValueError as ve: # Catch validation errors from the model
+            
+    except ValueError as ve:
         raise HTTPException(status_code=422, detail=str(ve))
     except Exception as e:
         if conn: await conn.rollback()
         raise HTTPException(status_code=500, detail=f"Error updating discount: {e}")
+    finally:
+        if conn: await conn.close()
+
+@router_discounts.delete("/{discount_id}", status_code=status.HTTP_200_OK)
+async def delete_discount(discount_id: int, current_user: dict = Depends(get_admin_or_manager)):
+    conn = None
+    try:
+        conn = await get_db_connection()
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT 1 FROM Discounts WHERE DiscountID = ?", discount_id)
+            if not await cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} not found.")
+            
+            await cursor.execute("DELETE FROM Discounts WHERE DiscountID = ?", discount_id)
+            await conn.commit()
+            
+            if cursor.rowcount == 0:
+                raise HTTPException(status_code=404, detail=f"Discount ID {discount_id} could not be deleted.")
+            
+            return {"message": f"Discount ID {discount_id} deleted successfully."}
+    except Exception as e:
+        if conn: await conn.rollback()
+        if "The DELETE statement conflicted with the REFERENCE constraint" in str(e):
+             raise HTTPException(status_code=409, detail=f"Cannot delete discount ID {discount_id} as it is currently applied to one or more sales.")
+        raise HTTPException(status_code=500, detail=f"Error deleting discount: {e}")
     finally:
         if conn: await conn.close()
